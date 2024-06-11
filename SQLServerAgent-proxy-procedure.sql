@@ -51,7 +51,9 @@ IF (@Category_schemas=1) BEGIN;
     SET @sql=N'';
 
     DECLARE sch_cur CURSOR FAST_FORWARD FOR
-        SELECT DISTINCT N'CREATE SCHEMA '+QUOTENAME(REPLACE(REPLACE([name], N'[', N''), N']', N''))+N';'
+        SELECT DISTINCT N'
+CREATE SCHEMA '+QUOTENAME(REPLACE(REPLACE([name], N'[', N''), N']', N''))+N';
+GRANT VIEW DEFINITION ON SCHEMA::'+QUOTENAME(REPLACE(REPLACE([name], N'[', N''), N']', N''))+N' TO public;'
         FROM dbo.syscategories
         WHERE SCHEMA_ID(REPLACE(REPLACE([name], N'[', N''), N']', N'')) IS NULL
           AND category_id IN (SELECT category_id FROM dbo.sysjobs)
