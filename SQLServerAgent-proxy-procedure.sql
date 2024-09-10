@@ -9,19 +9,22 @@ GO
 ---             and test it in a suitable environment before deploying it to
 ---             a live production environment.
 ---
+--- Source: github.com/sqlsunday/sqlagent-proxy-procedures
+---
 -------------------------------------------------------------------------------
 
 CREATE OR ALTER PROCEDURE dbo.Create_Agent_proxy_procedures
     @Principal_name     sysname=N'Agent_job_abstraction',
     @Category_schemas   bit=1,
-    @Default_schema     sysname=N'Jobs'
+    @Default_schema     sysname=N'Jobs',
+    @Whatif             bit=0
 AS
 
 
 
 
 
-DECLARE @sql nvarchar(max);
+DECLARE @sql1 nvarchar(max), @sql2 nvarchar(max);
 
 
 
@@ -30,14 +33,14 @@ DECLARE @sql nvarchar(max);
 -------------------------------------------------------------------------------
 
 IF (NOT EXISTS (SELECT NULL FROM sys.database_principals WHERE [name]=@Principal_name)) BEGIN;
-    SET @sql=N'
+    SET @sql1=N'
     CREATE USER '+QUOTENAME(@Principal_name)+N' WITHOUT LOGIN;
     
     ALTER ROLE [SQLAgentOperatorRole] ADD MEMBER '+QUOTENAME(@Principal_name)+N';
 ';
 
-    PRINT @sql;
-    EXECUTE sys.sp_executesql @sql;
+    PRINT @sql1;
+    IF (@Whatif=0) EXECUTE sys.sp_executesql @sql1;
 END;
 
 
@@ -48,11 +51,9 @@ END;
 -------------------------------------------------------------------------------
 
 IF (@Category_schemas=1) BEGIN;
-    SET @sql=N'';
-
     DECLARE sch_cur CURSOR FAST_FORWARD FOR
         SELECT DISTINCT N'
-CREATE SCHEMA '+QUOTENAME(REPLACE(REPLACE([name], N'[', N''), N']', N''))+N';
+CREATE SCHEMA '+QUOTENAME(REPLACE(REPLACE([name], N'[', N''), N']', N''))+N';', N'
 GRANT VIEW DEFINITION ON SCHEMA::'+QUOTENAME(REPLACE(REPLACE([name], N'[', N''), N']', N''))+N' TO public;'
         FROM dbo.syscategories
         WHERE SCHEMA_ID(REPLACE(REPLACE([name], N'[', N''), N']', N'')) IS NULL
@@ -60,10 +61,16 @@ GRANT VIEW DEFINITION ON SCHEMA::'+QUOTENAME(REPLACE(REPLACE([name], N'[', N''),
           AND [name] NOT IN (N'[Uncategorized (Local)]', N'[Uncategorized (Multi-Server)]', N'[Uncategorized]');
     OPEN sch_cur;
 
-    FETCH NEXT FROM sch_cur INTO @sql;
+    FETCH NEXT FROM sch_cur INTO @sql1, @sql2;
     WHILE (@@FETCH_STATUS=0) BEGIN;
-        EXECUTE sys.sp_executesql @sql;
-        FETCH NEXT FROM sch_cur INTO @sql;
+
+        PRINT @sql1;
+        IF (@Whatif=0) EXECUTE sys.sp_executesql @sql1;
+
+        PRINT @sql2;
+        IF (@Whatif=0) EXECUTE sys.sp_executesql @sql2;
+
+        FETCH NEXT FROM sch_cur INTO @sql1, @sql2;
     END;
 
     CLOSE sch_cur;
@@ -78,11 +85,15 @@ END;
 -------------------------------------------------------------------------------
 
 IF (SCHEMA_ID(@Default_schema) IS NULL) BEGIN;
-    SET @sql=N'
-CREATE SCHEMA '+QUOTENAME(@Default_schema)+N';
+    SET @sql1=N'
+CREATE SCHEMA '+QUOTENAME(@Default_schema)+N';';
+    PRINT @sql1;
+    IF (@Whatif=0) EXECUTE sys.sp_executesql @sql1;
+
+    SET @sql2=N'
 GRANT VIEW DEFINITION ON SCHEMA::'+QUOTENAME(@Default_schema)+N' TO public;';
-    PRINT @sql;
-    EXECUTE sys.sp_executesql @sql;
+    PRINT @sql2;
+    IF (@Whatif=0) EXECUTE sys.sp_executesql @sql2;
 END;
 
 
@@ -91,7 +102,7 @@ END;
 --- Delete orphaned job procedures
 -------------------------------------------------------------------------------
 
-SELECT STRING_AGG(N'DROP PROCEDURE '+QUOTENAME(s.[name])+N'.'+QUOTENAME(p.[name])+N';', N'
+SELECT @sql1=STRING_AGG(N'DROP PROCEDURE '+QUOTENAME(s.[name])+N'.'+QUOTENAME(p.[name])+N';', N'
 ')
 FROM sys.sql_modules AS m
 INNER JOIN sys.procedures AS p ON m.[object_id]=p.[object_id]
@@ -107,8 +118,8 @@ WHERE m.[definition] LIKE N'%--- This procedure is automatically generated and m
         SELECT CONVERT(nvarchar(200), CAST(job_id AS varbinary(64)), 1)
         FROM dbo.sysjobs);
 
-PRINT @sql;
-EXECUTE sys.sp_executesql @sql;
+PRINT @sql1;
+IF (@Whatif=0) EXECUTE sys.sp_executesql @sql1;
 
 
 
@@ -139,13 +150,13 @@ EXECUTE dbo.sp_start_job
     LEFT JOIN dbo.syscategories AS c ON j.category_id=c.category_id AND c.[name] NOT IN (N'[Uncategorized (Local)]', N'[Uncategorized (Multi-Server)]', N'[Uncategorized]');
 
 OPEN proc_cur;
-FETCH NEXT FROM proc_cur INTO @sql;
+FETCH NEXT FROM proc_cur INTO @sql1;
 WHILE (@@FETCH_STATUS=0) BEGIN;
 
-    PRINT @sql;
-    EXECUTE sys.sp_executesql @sql;
+    PRINT @sql1;
+    IF (@Whatif=0) EXECUTE sys.sp_executesql @sql1;
 
-    FETCH NEXT FROM proc_cur INTO @sql;
+    FETCH NEXT FROM proc_cur INTO @sql1;
 END;
 
 CLOSE proc_cur;
